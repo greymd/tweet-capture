@@ -10,6 +10,7 @@ import os
 import argparse
 import base64
 import time
+from urllib.parse import urlparse
 
 parser = argparse.ArgumentParser(description='Get tweet text and screenshot')
 parser.add_argument('url', type=str, help='URL of tweet')
@@ -18,7 +19,7 @@ parser.add_argument('--output-screenshot', type=str, help='Output screenshot fil
 args = parser.parse_args()
 
 target_url = args.url
-tweet_id = target_url.split("/")[-1]
+tweet_id = urlparse(target_url).path.rstrip("/").split("/")[-1]
 if args.output_text:
     output_text = args.output_text
 else:
@@ -51,21 +52,23 @@ for driver in driver_location_candidates:
         driver_location = driver
         break
 driver = uc.Chrome(options=chrome_options, browser_executable_path=binary_location, driver_executable_path=driver_location)
-xpath_tweettext = '//*[@data-testid="tweetText"]/span'
-xpath_tweet_article = './ancestor::article'
+xpath_target_tweet_article = f'//article[.//a[contains(@href, "/status/{tweet_id}")]]'
 
 try:
     driver.set_window_size(720, 1200)
     driver.get(target_url)
-    WebDriverWait(driver, 60).until(EC.presence_of_element_located((By.XPATH, xpath_tweettext)))
-    result = driver.find_elements(by=By.XPATH, value=xpath_tweettext)
-    for element in result:
-        # save text to file text_<tweet_id>.txt
-        with open(output_text, 'w') as f:
-            f.write(element.text)
+    tweet = WebDriverWait(driver, 60).until(EC.presence_of_element_located((By.XPATH, xpath_target_tweet_article)))
+    tweet_texts = tweet.find_elements(by=By.XPATH, value='.//*[@data-testid="tweetText"]')
+    main_text = tweet_texts[0].text if tweet_texts else ""
+    quoted_texts = [element.text for element in tweet_texts[1:] if element.text]
+    text = main_text
+    if quoted_texts:
+        quoted_text = "\n\n".join(quoted_texts)
+        quoted_text = "\n".join(f"> {line}" if line else ">" for line in quoted_text.splitlines())
+        text = f"{main_text}\n\n{quoted_text}"
+    with open(output_text, 'w') as f:
+        f.write(text)
     # take screenshot
-    tweet_text = driver.find_element(by=By.XPATH, value=xpath_tweettext)
-    tweet = tweet_text.find_element(by=By.XPATH, value=xpath_tweet_article)
     driver.execute_script('arguments[0].scrollIntoView({block: "center", inline: "center"});', tweet)
     driver.execute_script("""
         for (const el of document.querySelectorAll('div')) {

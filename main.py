@@ -8,6 +8,8 @@ from selenium.webdriver.support.wait import WebDriverWait
 from selenium.webdriver.support import expected_conditions as EC
 import os
 import argparse
+import base64
+import time
 
 parser = argparse.ArgumentParser(description='Get tweet text and screenshot')
 parser.add_argument('url', type=str, help='URL of tweet')
@@ -50,8 +52,10 @@ for driver in driver_location_candidates:
         break
 driver = uc.Chrome(options=chrome_options, browser_executable_path=binary_location, driver_executable_path=driver_location)
 xpath_tweettext = '//*[@data-testid="tweetText"]/span'
+xpath_tweet_article = './ancestor::article'
 
 try:
+    driver.set_window_size(720, 1200)
     driver.get(target_url)
     WebDriverWait(driver, 60).until(EC.presence_of_element_located((By.XPATH, xpath_tweettext)))
     result = driver.find_elements(by=By.XPATH, value=xpath_tweettext)
@@ -60,8 +64,44 @@ try:
         with open(output_text, 'w') as f:
             f.write(element.text)
     # take screenshot
-    driver.set_window_size(800, 800)
-    driver.save_screenshot(output_screenshot)
+    tweet_text = driver.find_element(by=By.XPATH, value=xpath_tweettext)
+    tweet = tweet_text.find_element(by=By.XPATH, value=xpath_tweet_article)
+    driver.execute_script('arguments[0].scrollIntoView({block: "center", inline: "center"});', tweet)
+    driver.execute_script("""
+        for (const el of document.querySelectorAll('div')) {
+            const style = window.getComputedStyle(el);
+            const rect = el.getBoundingClientRect();
+            if (
+                style.position === 'fixed' &&
+                rect.height > 40 &&
+                (
+                    rect.bottom >= window.innerHeight - 8 ||
+                    rect.top <= 8
+                )
+            ) {
+                el.style.setProperty('display', 'none', 'important');
+            }
+        }
+    """)
+    time.sleep(1)
+    clip = driver.execute_script("""
+        const rect = arguments[0].getBoundingClientRect();
+        return {
+            x: Math.max(0, rect.left + window.scrollX),
+            y: Math.max(0, rect.top + window.scrollY),
+            width: rect.width,
+            height: rect.height,
+            scale: 1
+        };
+    """, tweet)
+    screenshot = driver.execute_cdp_cmd("Page.captureScreenshot", {
+        "format": "png",
+        "fromSurface": True,
+        "captureBeyondViewport": True,
+        "clip": clip,
+    })
+    with open(output_screenshot, "wb") as f:
+        f.write(base64.b64decode(screenshot["data"]))
 finally:
     # Close the browser
     driver.quit()

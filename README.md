@@ -37,3 +37,15 @@ $ docker tag x-post-capture ghcr.io/greymd/x-post-capture/x-post-capture:latest
 $ docker push ghcr.io/greymd/x-post-capture/x-post-capture:latest
 ```
 
+#### Push with finch (multi-platform build and push):
+
+```bash
+$ finch build \
+  --platform linux/arm64,linux/amd64 \
+  -t ghcr.io/greymd/x-post-capture/x-post-capture:latest \
+  .
+
+$ finch push \
+  --all-platforms \
+  ghcr.io/greymd/x-post-capture/x-post-capture:latest
+```

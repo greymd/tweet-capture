@@ -71,6 +71,79 @@ try:
     # take screenshot
     driver.execute_script('arguments[0].scrollIntoView({block: "center", inline: "center"});', tweet)
     driver.execute_script("""
+        function hideElement(el) {
+            if (!el) {
+                return;
+            }
+            el.style.setProperty('display', 'none', 'important');
+            el.style.setProperty('visibility', 'hidden', 'important');
+            el.style.setProperty('opacity', '0', 'important');
+            el.setAttribute('aria-hidden', 'true');
+        }
+
+        for (const bottomBar of document.querySelectorAll('[data-testid="BottomBar"]')) {
+            let target = bottomBar;
+            while (target.parentElement && target.parentElement.id !== 'layers') {
+                const rect = target.getBoundingClientRect();
+                if (rect.bottom >= window.innerHeight - 8 && rect.width >= window.innerWidth * 0.5) {
+                    target = target.parentElement;
+                    continue;
+                }
+                break;
+            }
+            hideElement(target);
+            hideElement(bottomBar);
+        }
+
+        const loginBannerPhrases = [
+            "Don’t miss what’s happening",
+            "Don't miss what's happening"
+        ];
+        for (const el of document.querySelectorAll('span')) {
+            const text = el.textContent.trim();
+            if (!loginBannerPhrases.includes(text)) {
+                continue;
+            }
+
+            const bottomBar = el.closest('[data-testid="BottomBar"]');
+            if (bottomBar) {
+                hideElement(bottomBar);
+            }
+
+            let target = el.parentElement;
+            while (target && target.id !== 'layers') {
+                const style = window.getComputedStyle(target);
+                const rect = target.getBoundingClientRect();
+                if (
+                    (style.position === 'fixed' || style.position === 'absolute') &&
+                    rect.bottom >= window.innerHeight - 8 &&
+                    rect.width >= window.innerWidth * 0.5
+                ) {
+                    hideElement(target);
+                    break;
+                }
+                target = target.parentElement;
+            }
+        }
+
+        for (const el of document.querySelectorAll('[data-testid="BottomBar"] span')) {
+            if (!loginBannerPhrases.includes(el.textContent.trim())) {
+                continue;
+            }
+            let target = el.closest('[data-testid="BottomBar"]');
+            while (target && target.parentElement && target.parentElement.id !== 'layers') {
+                const rect = target.parentElement.getBoundingClientRect();
+                if (rect.bottom < window.innerHeight - 8 || rect.width < window.innerWidth * 0.5) {
+                    break;
+                }
+                target = target.parentElement;
+            }
+            if (target) {
+                hideElement(target);
+                break;
+            }
+        }
+
         for (const el of document.querySelectorAll('div')) {
             const style = window.getComputedStyle(el);
             const rect = el.getBoundingClientRect();
@@ -82,7 +155,7 @@ try:
                     rect.top <= 8
                 )
             ) {
-                el.style.setProperty('display', 'none', 'important');
+                hideElement(el);
             }
         }
     """)
@@ -97,6 +170,20 @@ try:
             scale: 1
         };
     """, tweet)
+    if clip["width"] <= 0 or clip["height"] <= 0:
+        tweet = driver.find_element(by=By.XPATH, value=xpath_target_tweet_article)
+        clip = driver.execute_script("""
+            const rect = arguments[0].getBoundingClientRect();
+            return {
+                x: Math.max(0, rect.left + window.scrollX),
+                y: Math.max(0, rect.top + window.scrollY),
+                width: rect.width,
+                height: rect.height,
+                scale: 1
+            };
+        """, tweet)
+    if clip["width"] <= 0 or clip["height"] <= 0:
+        raise RuntimeError(f"Invalid tweet screenshot clip: {clip}")
     screenshot = driver.execute_cdp_cmd("Page.captureScreenshot", {
         "format": "png",
         "fromSurface": True,

@@ -52,20 +52,48 @@ for driver in driver_location_candidates:
         driver_location = driver
         break
 driver = uc.Chrome(options=chrome_options, browser_executable_path=binary_location, driver_executable_path=driver_location)
-xpath_target_tweet_article = f'//article[.//a[contains(@href, "/status/{tweet_id}")]]'
+xpath_target_tweet_article = (
+    f'(//article[@data-tweet-id="{tweet_id}"]'
+    f' | //article[.//a[contains(@href, "/status/{tweet_id}")]])[1]'
+)
+xpath_legacy_tweet_text = './/*[@data-testid="tweetText"]'
+xpath_current_tweet_text = (
+    './/div[@dir="auto"'
+    ' and contains(concat(" ", normalize-space(@class), " "), " whitespace-pre-wrap ")'
+    ' and contains(concat(" ", normalize-space(@class), " "), " text-text ")'
+    ' and not(contains(@class, "line-clamp-"))]'
+)
 
-try:
-    driver.set_window_size(720, 1200)
-    driver.get(target_url)
-    tweet = WebDriverWait(driver, 60).until(EC.presence_of_element_located((By.XPATH, xpath_target_tweet_article)))
-    tweet_texts = tweet.find_elements(by=By.XPATH, value='.//*[@data-testid="tweetText"]')
-    main_text = tweet_texts[0].text if tweet_texts else ""
-    quoted_texts = [element.text for element in tweet_texts[1:] if element.text]
+
+def format_tweet_text(main_text, quoted_texts):
     text = main_text
     if quoted_texts:
         quoted_text = "\n\n".join(quoted_texts)
         quoted_text = "\n".join(f"> {line}" if line else ">" for line in quoted_text.splitlines())
         text = f"{main_text}\n\n{quoted_text}"
+    return text
+
+
+def extract_tweet_text(driver, tweet):
+    text_elements = tweet.find_elements(by=By.XPATH, value=xpath_legacy_tweet_text)
+    if not text_elements:
+        text_elements = tweet.find_elements(by=By.XPATH, value=xpath_current_tweet_text)
+
+    texts = [element.text.strip() for element in text_elements if element.text.strip()]
+    if texts:
+        return format_tweet_text(texts[0], texts[1:])
+
+    description = driver.find_elements(by=By.CSS_SELECTOR, value='meta[property="og:description"]')
+    if description:
+        return description[0].get_attribute("content").strip()
+
+    return ""
+
+try:
+    driver.set_window_size(720, 1200)
+    driver.get(target_url)
+    tweet = WebDriverWait(driver, 60).until(EC.presence_of_element_located((By.XPATH, xpath_target_tweet_article)))
+    text = extract_tweet_text(driver, tweet)
     with open(output_text, 'w') as f:
         f.write(text)
     # take screenshot
